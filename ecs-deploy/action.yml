@@ -67,7 +67,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        echo "--- Verifying ECS service exists..."
+        echo "--- Verifying ECS service exists... "
         echo "--- Cluster: ${{ inputs.ecs-cluster }}"
         echo "--- Service: ${{ inputs.ecs-service }}"
 
