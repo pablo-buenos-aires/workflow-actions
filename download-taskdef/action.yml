@@ -5,7 +5,7 @@ inputs:
     description: "PAT or token with access to the private repo"
     required: true
   taskdef-url:
-    description: "GitHub API URL to the file
+    description: "GitHub API URL to the file"
     required: true
   output:
     description: "Output filename"
@@ -19,7 +19,7 @@ runs:
   using: "composite"
   steps:
     - name: Download task definition
-#      shell: bash
+      shell: bash
       run: |
         set -euo pipefail
         echo "--- Downloading task definition:"
