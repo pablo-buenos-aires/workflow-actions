@@ -1,0 +1,45 @@
+name: "ECR Build and Push"
+description: "Login to ECR, build, tag and push image"
+inputs:
+  ecr-repo:
+    description: "Full ECR repo URI (e.g. 123.dkr.ecr.region.amazonaws.com/repo)"
+    required: true
+  image-tag:
+    description: "Image tag (e.g. v123)"
+    required: true
+  app-port:
+    description: "APP_PORT build-arg"
+    required: true
+  dockerfile:
+    description: "Dockerfile path"
+    required: false
+    default: "Dockerfile"
+  context:
+    description: "Build context"
+    required: false
+    default: "."
+runs:
+  using: "composite"
+  steps:
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Building image"
+        docker build --build-arg APP_PORT="${{ inputs.app-port }}" \
+          -f "${{ inputs.dockerfile }}" \
+          -t "${{ inputs.ecr-repo }}:${{ inputs.image-tag }}" \
+          "${{ inputs.context }}"
+
+        echo "--- Tagging latest"
+        docker tag "${{ inputs.ecr-repo }}:${{ inputs.image-tag }}" "${{ inputs.ecr-repo }}:latest"
+
+        echo "--- Pushing"
+        docker push "${{ inputs.ecr-repo }}:${{ inputs.image-tag }}"
+        docker push "${{ inputs.ecr-repo }}:latest"
+
+        echo "✓ Image pushed: ${{ inputs.ecr-repo }}:${{ inputs.image-tag }}"
