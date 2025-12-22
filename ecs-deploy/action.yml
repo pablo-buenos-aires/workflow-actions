@@ -50,12 +50,12 @@ runs:
           --query 'taskDefinition.taskDefinitionArn' \
           --output text)
 
-    # Проверяем что ARN получен
+        # Проверяем что ARN получен
         if [ -z "$TASK_DEF_ARN" ]; then
           echo "ERROR: Failed to register task definition"
           exit 1
         fi
-    # Сохраняем ARN для использования в следующих шагах
+        # Сохраняем ARN для использования в следующих шагах
         echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
         REVISION=$(echo "$TASK_DEF_ARN" | rev | cut -d':' -f1 | rev)
         echo "TASK_DEF_REVISION=$REVISION" >> $GITHUB_ENV
