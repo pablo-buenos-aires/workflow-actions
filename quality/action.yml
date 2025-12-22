@@ -1,0 +1,32 @@
+name: "Go Quality: test + coverage + SonarCloud"
+description: "Checkout, setup Go, run tests with coverage, run SonarCloud scan"
+inputs:
+  go-version:
+    description: "Go version"
+    required: false
+    default: "1.22"
+  sonar-token:
+    description: "SonarCloud token"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Test with coverage
+      shell: bash
+      run: |
+        set -euo pipefail
+        go test ./... -coverprofile=coverage.out
+        test -f coverage.out
+
+    - name: SonarCloud Scan
+      uses: sonarsource/sonarcloud-github-action@v2
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}

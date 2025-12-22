@@ -1,0 +1,146 @@
+# (jq update + register + update-service + wait)
+name: "ECS Deploy via Task Definition JSON"
+description: "Update task definition image, register revision, update ECS service, wait stable, show status"
+inputs:
+  task-definition:
+    description: "Path to task definition JSON file"
+    required: true
+  container-name:
+    description: "Container name to update in task definition"
+    required: true
+  new-image:
+    description: "Full image URI with tag (e.g. ECR_REPO:TAG)"
+    required: true
+  ecs-cluster:
+    description: "ECS cluster name"
+    required: true
+  ecs-service:
+    description: "ECS service name"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Update task definition with new image (jq)
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Updating image in task definition"
+        echo "--- Container: ${{ inputs.container-name }}"
+        echo "--- New image: ${{ inputs.new-image }}"
+        jq --arg container "${{ inputs.container-name }}" --arg image "${{ inputs.new-image }}" \
+          '.containerDefinitions |= map(
+            if .name == $container then
+              .image = $image
+            else
+              .
+            end
+          )' \
+          "${{ inputs.task-definition }}" > task-definition-updated.json
+
+        mv task-definition-updated.json "${{ inputs.task-definition }}"
+        echo "✓ Task definition updated"
+
+    - name: Register new task definition revision
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Registering new task definition revision..."
+        TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://${{ inputs.task-definition }} \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+
+    # Проверяем что ARN получен
+        if [ -z "$TASK_DEF_ARN" ]; then
+          echo "ERROR: Failed to register task definition"
+          exit 1
+        fi
+    # Сохраняем ARN для использования в следующих шагах
+        echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+        REVISION=$(echo "$TASK_DEF_ARN" | rev | cut -d':' -f1 | rev)
+        echo "TASK_DEF_REVISION=$REVISION" >> $GITHUB_ENV
+
+        echo "✓ Registered: $TASK_DEF_ARN"
+        echo "--- Revision: $REVISION"
+
+    - name: Verify ECS service exists
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Verifying ECS service exists..."
+        echo "--- Cluster: ${{ inputs.ecs-cluster }}"
+        echo "--- Service: ${{ inputs.ecs-service }}"
+
+        SERVICE_STATUS=$(aws ecs describe-services \
+          --cluster "${{ inputs.ecs-cluster }}" \
+          --services "${{ inputs.ecs-service }}" \
+          --query 'services[0].status' \
+          --output text 2>/dev/null || echo "NOT_FOUND")
+
+        if [ "$SERVICE_STATUS" = "NOT_FOUND" ] || [ "$SERVICE_STATUS" = "None" ]; then
+          echo "ERROR: Service not found"
+          aws ecs list-services --cluster "${{ inputs.ecs-cluster }}" --output table || true
+          exit 1
+        fi
+
+        echo "✓ Service found with status: $SERVICE_STATUS"
+
+    - name: Update ECS service
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Updating ECS service"
+        echo "--- Cluster: ${{ inputs.ecs-cluster }}"
+        echo "--- Service: ${{ inputs.ecs-service }}"
+        echo "--- Task Definition: $TASK_DEF_ARN"
+
+        aws ecs update-service \
+          --cluster "${{ inputs.ecs-cluster }}" \
+          --service "${{ inputs.ecs-service }}" \
+          --task-definition "$TASK_DEF_ARN" \
+          --force-new-deployment \
+          --output json > service-update-result.json
+
+        echo "✓ ECS service update initiated"
+        jq '.service | {
+          serviceName: .serviceName,
+          status: .status,
+          desiredCount: .desiredCount,
+          runningCount: .runningCount,
+          taskDefinition: .taskDefinition
+        }' service-update-result.json
+
+    - name: Wait for service stability
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Waiting for services-stable..."
+        aws ecs wait services-stable \
+          --cluster "${{ inputs.ecs-cluster }}" \
+          --services "${{ inputs.ecs-service }}"
+        echo "✓ Service is stable"
+
+    - name: Show final service status
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "--- Final service status:"
+        aws ecs describe-services \
+          --cluster "${{ inputs.ecs-cluster }}" \
+          --services "${{ inputs.ecs-service }}" \
+          --query 'services[0] | {
+            serviceName: serviceName,
+            status: status,
+            desiredCount: desiredCount,
+            runningCount: runningCount,
+            taskDefinition: taskDefinition,
+            deployments: deployments[*].{
+              status: status,
+              taskDefinition: taskDefinition,
+              desiredCount: desiredCount,
+              runningCount: runningCount,
+              createdAt: createdAt
+            }
+          }' \
+          --output json | jq .
+        echo "--- Task Definition Revision: $TASK_DEF_REVISION"
