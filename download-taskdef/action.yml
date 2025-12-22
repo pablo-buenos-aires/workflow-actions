@@ -19,7 +19,7 @@ runs:
   using: "composite"
   steps:
     - name: Download task definition
-      shell: bash
+#      shell: bash
       run: |
         set -euo pipefail
         echo "--- Downloading task definition:"
