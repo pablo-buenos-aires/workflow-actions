@@ -37,6 +37,9 @@ runs:
           )' \
           "${{ inputs.task-definition }}" > task-definition-updated.json
 
+        echo "--- Updated task definition (task-definition-updated.json):"
+        cat task-definition-updated.json
+
         mv task-definition-updated.json "${{ inputs.task-definition }}"
         echo "✓ Task definition updated"
 
